@@ -71,7 +71,9 @@ class SelfAttention(nn.Module):
 class Encoder(nn.Module):
     def __init__(self, embed_dim, n_attention_heads, forward_mul):
         super().__init__()
-        self.attention = SelfAttention(embed_dim, n_attention_heads)
+        self.n_attention_heads = n_attention_heads
+        self.head_embed_dim = embed_dim // n_attention_heads
+        self.attention = torch.nn.MultiheadAttention(embed_dim, n_attention_heads, batch_first=True) # SelfAttention(embed_dim, n_attention_heads)
         self.fc1 = nn.Linear(embed_dim, embed_dim * forward_mul)
         self.activation = nn.GELU()
         self.fc2 = nn.Linear(embed_dim * forward_mul, embed_dim)
@@ -79,7 +81,9 @@ class Encoder(nn.Module):
         self.norm2 = nn.LayerNorm(embed_dim)
 
     def forward(self, x):
-        x = x + self.attention(self.norm1(x)) # Skip connections
+        x = self.norm1(x)
+        x_attn = self.attention(x, x, x, need_weights=False)[0] # Skip connections
+        x = x + x_attn
         x = x + self.fc2(self.activation(self.fc1(self.norm2(x))))  # Skip connections
         return x
 

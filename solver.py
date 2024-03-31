@@ -1,10 +1,17 @@
+import os
+
 import torch
 import torch.nn as nn
-import os
+
+import wandb
+
 from torch import optim
 from model import VisionTransformer
 from sklearn.metrics import confusion_matrix, accuracy_score
+
+from adam_sr_patch import patch_adamw
 from data_loader import get_loader
+
 
 class Solver(object):
     def __init__(self, args):
@@ -35,19 +42,20 @@ class Solver(object):
     def test_dataset(self, loader):
         self.model.eval()
 
-        actual = []
-        pred = []
+        with torch.inference_mode():
+            actual = []
+            pred = []
 
-        for (x, y) in loader:
-            if self.args.is_cuda:
-                x = x.cuda()
+            for (x, y) in loader:
+                if self.args.is_cuda:
+                    x = x.cuda()
 
-            with torch.no_grad():
-                logits = self.model(x)
-            predicted = torch.max(logits, 1)[1]
+                with torch.no_grad():
+                    logits = self.model(x)
+                predicted = torch.max(logits, 1)[1]
 
-            actual += y.tolist()
-            pred += predicted.tolist()
+                actual += y.tolist()
+                pred += predicted.tolist()
 
         acc = accuracy_score(y_true=actual, y_pred=pred)
         cm = confusion_matrix(y_true=actual, y_pred=pred, labels=range(self.args.n_classes))
@@ -67,38 +75,80 @@ class Solver(object):
         return acc
 
     def train(self):
+        wandb.login()
+        wandb.init(
+            # Set the project where this run will be logged
+            project=self.args.wandb_project_name,
+            name=self.args.wandb_run_name,
+            # Track hperparameters and run metadata
+            config=vars(self.args),
+        )
+
         iter_per_epoch = len(self.train_loader)
 
+        weight_dtype = torch.float32
+        if self.args.precision == 'bfloat16' or \
+            self.args.precision == 'bfloat16_sr':
+            weight_dtype = torch.bfloat16
+            self.model = self.model.to(dtype=weight_dtype)
+        if self.args.precision == 'bfloat16_ac':
+            weight_dtype = torch.bfloat16
+
+        optimizer = None
+        linear_warmup = None
+        cos_decay = None
         optimizer = optim.AdamW(self.model.parameters(), lr=self.args.lr, weight_decay=1e-3)
-        linear_warmup = optim.lr_scheduler.LinearLR(optimizer, start_factor=1/self.args.warmup_epochs, end_factor=1.0, total_iters=self.args.warmup_epochs, last_epoch=-1, verbose=True)
-        cos_decay = optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=self.args.epochs-self.args.warmup_epochs, eta_min=1e-5, verbose=True)
+        linear_warmup = optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=1/self.args.warmup_epochs,
+            end_factor=1.0,
+            total_iters=self.args.warmup_epochs,
+            last_epoch=-1,
+            verbose=True,
+        )
+        cos_decay = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer=optimizer,
+            T_max=self.args.epochs-self.args.warmup_epochs,
+            eta_min=1e-5,
+            verbose=True,
+        )
+
+        if self.args.precision == 'bfloat16_sr':
+            patch_adamw(optimizer, True)
 
         best_acc = 0
-        for epoch in range(self.args.epochs):
 
-            self.model.train()
+        with torch.autocast('cuda' if self.args.is_cuda else 'cpu', dtype=weight_dtype):
+            for epoch in range(self.args.epochs):
+                self.model.train()
+                for i, (x, y) in enumerate(self.train_loader):
+                    if self.args.is_cuda:
+                        x, y = x.cuda(), y.cuda()
 
-            for i, (x, y) in enumerate(self.train_loader):
-                if self.args.is_cuda:
-                    x, y = x.cuda(), y.cuda()
+                    logits = self.model(x)
+                    loss = self.ce(logits, y)
 
-                logits = self.model(x)
-                loss = self.ce(logits, y)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
 
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                    log = {"loss": loss, "lr": optimizer.param_groups[0]['lr']}
+                    if i == (iter_per_epoch - 1):
+                        acc = self.test(train=False)
+                        log["acc"] = acc
+                    wandb.log(log)
 
-                if i % 50 == 0 or i == (iter_per_epoch - 1):
-                    print(f'Ep: {epoch+1}/{self.args.epochs}, It: {i+1}/{iter_per_epoch}, loss: {loss:.4f}')
+                    if i % 50 == 0 or i == (iter_per_epoch - 1):
+                        print(f'Ep: {epoch+1}/{self.args.epochs}, It: {i+1}/{iter_per_epoch}, loss: {loss:.4f}')
 
-            test_acc = self.test(train=((epoch+1)%25==0)) # Test training set every 25 epochs
-            best_acc = max(test_acc, best_acc)
-            print(f"Best test acc: {best_acc:.2%}\n")
+                test_acc = self.test(train=((epoch+1)%25==0)) # Test training set every 25 epochs
+                best_acc = max(test_acc, best_acc)
+                print(f"Best test acc: {best_acc:.2%}\n")
 
-            torch.save(self.model.state_dict(), os.path.join(self.args.model_path, "ViT_model.pt"))
-            
-            if epoch < self.args.warmup_epochs:
-                linear_warmup.step()
-            else:
-                cos_decay.step()
+                torch.save(self.model.state_dict(), os.path.join(self.args.model_path, "ViT_model.pt"))
+                
+                if epoch < self.args.warmup_epochs:
+                    if linear_warmup is not None:
+                        linear_warmup.step()
+                else:
+                    if cos_decay is not None:
+                        cos_decay.step()

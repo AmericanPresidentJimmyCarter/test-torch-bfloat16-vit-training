@@ -29,17 +29,20 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Vision Transformer for MNIST')
 
     # Training Arguments
-    parser.add_argument('--epochs', type=int, default=200)
-    parser.add_argument('--warmup_epochs', type=int, default=10)
+    parser.add_argument('--epochs', type=int, default=25)
+    parser.add_argument('--warmup_epochs', type=int, default=5)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--n_classes', type=int, default=10)
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--lr', type=float, default=5e-4)
+    parser.add_argument('--wandb_project_name', type=str, default="playing-with-vit")
+    parser.add_argument('--wandb_run_name', type=str, default="run")
+    parser.add_argument('--precision', type=str, default="float32")
 
     # Data arguments
     parser.add_argument('--dataset', type=str, default='mnist', help=['mnist', 'fmnist', 'svhn', 'cifar10'])
-    parser.add_argument("--image_size", type=int, default=28, help="Image size")
-    parser.add_argument("--patch_size", type=int, default=4, help="Patch Size")
+    parser.add_argument("--image_size", type=int, default=24, help="Image size")
+    parser.add_argument("--patch_size", type=int, default=2, help="Patch Size")
     parser.add_argument("--n_channels", type=int, default=1, help="Number of channels")
     parser.add_argument('--data_path', type=str, default='./data/')
 
@@ -48,7 +51,7 @@ if __name__ == '__main__':
     parser.add_argument("--n_attention_heads", type=int, default=4, help="number of heads to be used")
     parser.add_argument("--forward_mul", type=int, default=2, help="forward multiplier")
     parser.add_argument("--n_layers", type=int, default=6, help="number of encoder layers")
-    parser.add_argument('--model_path', type=str, default='./model')
+    parser.add_argument('--model_path', type=str, default='./models/model')
     parser.add_argument("--load_model", type=bool, default=False, help="Load saved model")
 
     start_time = datetime.datetime.now()
