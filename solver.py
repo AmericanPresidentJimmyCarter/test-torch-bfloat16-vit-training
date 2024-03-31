@@ -5,6 +5,7 @@ import torch.nn as nn
 
 import wandb
 
+from adam_bfloat16 import AdamWBF16
 from torch import optim
 from model import VisionTransformer
 from sklearn.metrics import confusion_matrix, accuracy_score
@@ -12,6 +13,8 @@ from sklearn.metrics import confusion_matrix, accuracy_score
 from adam_sr_patch import patch_adamw
 from data_loader import get_loader
 
+# torch.backends.cuda.matmul.allow_tf32 = True
+# torch.backends.cudnn.allow_tf32 = True
 
 class Solver(object):
     def __init__(self, args):
@@ -88,16 +91,22 @@ class Solver(object):
 
         weight_dtype = torch.float32
         if self.args.precision == 'bfloat16' or \
-            self.args.precision == 'bfloat16_sr':
+            self.args.precision == 'bfloat16_sr' or \
+            self.args.precision == 'bfloat16_alt':
             weight_dtype = torch.bfloat16
             self.model = self.model.to(dtype=weight_dtype)
-        if self.args.precision == 'bfloat16_ac':
+        if self.args.precision == 'bfloat16_ac' or \
+            self.args.precision == 'bfloat16_sr_ac':
             weight_dtype = torch.bfloat16
 
         optimizer = None
         linear_warmup = None
         cos_decay = None
-        optimizer = optim.AdamW(self.model.parameters(), lr=self.args.lr, weight_decay=1e-3)
+
+        optim_type = optim.AdamW
+        if self.args.precision == 'bfloat16_alt':
+            optim_type = AdamWBF16
+        optimizer = optim_type(self.model.parameters(), lr=self.args.lr, weight_decay=1e-3)
         linear_warmup = optim.lr_scheduler.LinearLR(
             optimizer, start_factor=1/self.args.warmup_epochs,
             end_factor=1.0,
@@ -112,7 +121,7 @@ class Solver(object):
             verbose=True,
         )
 
-        if self.args.precision == 'bfloat16_sr':
+        if self.args.precision == 'bfloat16_sr' or self.args.precision == 'bfloat16_sr_ac':
             patch_adamw(optimizer, True)
 
         best_acc = 0
@@ -152,3 +161,5 @@ class Solver(object):
                 else:
                     if cos_decay is not None:
                         cos_decay.step()
+
+        self.model = self.model.to(dtype=torch.float32)
