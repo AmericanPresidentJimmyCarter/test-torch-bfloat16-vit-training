@@ -1,8 +1,19 @@
 # Vision Transformer-MNIST-CIFAR10
 Simplified Scratch Pytorch implementation of Vision Transformer (ViT) with detailed steps (Refer to <a href="model.py">model.py</a>). <br> <br>
 
-This includes some bfloat16 training tests and a patching bfloat16 adamw implementation from <a href="https://github.com/Nerogar/OneTrainer">Nerogar</a>, run with run_experiments_prec.sh
+This includes some bfloat16 training tests and a patching bfloat16 adamw implementation from <a href="https://github.com/Nerogar/OneTrainer">Nerogar</a>, run with <b>run_experiments_prec.sh</b>
 <br><br>
+To use the bfloat16 optimizer, simply copy the <b>adam_bfloat16</b> module and then:
+<pre>
+from adam_bfloat16 import AdamWBF16
+
+...
+
+model = model.to(dtype=torch.bfloat16)
+optimizer = AdamWBF16(self.model.parameters(), ...)
+</pre>
+<br><br>
+
 <ul>
   <li>Scaled-down version of the original ViT architecture from <a href="https://arxiv.org/pdf/2010.11929.pdf">An Image is Worth 16X16 Words</a>. </li>
   <li>Has only 184k parameters (Original ViT-Base has 86 million). </li>
