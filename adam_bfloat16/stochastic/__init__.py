@@ -83,6 +83,9 @@ def add_stochastic_(_input: Tensor, other: Tensor, alpha: float = 1.0):
         other: the other tensor
         alpha: a multiplier for other
     """
+    if _input.device.type == 'mps':
+        _input = _input.to(torch.bfloat16)
+
     if other.dtype == torch.float32:
         result = other.clone()
     else:
