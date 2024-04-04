@@ -102,7 +102,7 @@ def add_stochastic_(_input: Tensor, other: Tensor, alpha: float = 1.0):
 
     copy_stochastic_(_input, result)
 
-    if _input.size(-1) % 2 != 0 and _input.device.type == 'mps':
+    if _input.device.type == 'mps':
         _input_original.copy_(_input.view(dtype=torch.float32))
 
 
