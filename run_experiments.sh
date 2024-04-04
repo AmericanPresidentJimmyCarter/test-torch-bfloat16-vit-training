@@ -1,0 +1,5 @@
+python main.py --dataset="mnist" --embed_dim=64 --n_attention_heads=4 --n_layers=6 --model_path="models/embed64_layers6" --wandb_run_name="embed64_layers6"
+python main.py --dataset="mnist" --embed_dim=48 --n_attention_heads=4 --n_layers=8 --model_path="models/embed48_layers8" --wandb_run_name="embed48_layers8"
+python main.py --dataset="mnist" --embed_dim=32 --n_attention_heads=4 --n_layers=12 --model_path="models/embed32_layers12"  --wandb_run_name="embed32_layers12"
+python main.py --dataset="mnist" --embed_dim=96 --n_attention_heads=4 --n_layers=4 --model_path="models/embed96_layers4" --wandb_run_name="embed96_layers4"
+python main.py --dataset="mnist" --embed_dim=128 --n_attention_heads=4 --n_layers=2 --model_path="models/embed128_layers2" --wandb_run_name="embed128_layers2"

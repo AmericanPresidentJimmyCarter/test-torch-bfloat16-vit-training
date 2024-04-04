@@ -5,6 +5,8 @@ import torch.nn as nn
 
 import wandb
 
+# from adamw_bf16 import AdamWBF16
+
 from adam_bfloat16 import AdamWBF16
 from torch import optim
 from model import VisionTransformer
@@ -29,7 +31,7 @@ class Solver(object):
         
         if self.args.is_cuda:
             print("Using GPU")
-            self.model = self.model.cuda()
+            self.model = self.model.to('mps')
         else:
             print("Cuda not available.")
 
@@ -42,7 +44,7 @@ class Solver(object):
 
         self.ce = nn.CrossEntropyLoss()
 
-    def test_dataset(self, loader):
+    def test_dataset(self, loader, dtype=torch.bfloat16):
         self.model.eval()
 
         with torch.inference_mode():
@@ -51,7 +53,7 @@ class Solver(object):
 
             for (x, y) in loader:
                 if self.args.is_cuda:
-                    x = x.cuda()
+                    x = x.to('mps', dtype=dtype)
 
                 with torch.no_grad():
                     logits = self.model(x)
@@ -126,40 +128,40 @@ class Solver(object):
 
         best_acc = 0
 
-        with torch.autocast('cuda' if self.args.is_cuda else 'cpu', dtype=weight_dtype):
-            for epoch in range(self.args.epochs):
-                self.model.train()
-                for i, (x, y) in enumerate(self.train_loader):
-                    if self.args.is_cuda:
-                        x, y = x.cuda(), y.cuda()
+        # with torch.autocast('cuda' if self.args.is_cuda else 'cpu', dtype=weight_dtype):
+        for epoch in range(self.args.epochs):
+            self.model.train()
+            for i, (x, y) in enumerate(self.train_loader):
+                if self.args.is_cuda:
+                    x, y = x.to('mps'), y.to('mps')
 
-                    logits = self.model(x)
-                    loss = self.ce(logits, y)
+                logits = self.model(x.to(dtype=torch.bfloat16))
+                loss = self.ce(logits, y)
 
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
-                    log = {"loss": loss, "lr": optimizer.param_groups[0]['lr']}
-                    if i == (iter_per_epoch - 1):
-                        acc = self.test(train=False)
-                        log["acc"] = acc
-                    wandb.log(log)
+                log = {"loss": loss, "lr": optimizer.param_groups[0]['lr']}
+                if i == (iter_per_epoch - 1):
+                    acc = self.test(train=False)
+                    log["acc"] = acc
+                wandb.log(log)
 
-                    if i % 50 == 0 or i == (iter_per_epoch - 1):
-                        print(f'Ep: {epoch+1}/{self.args.epochs}, It: {i+1}/{iter_per_epoch}, loss: {loss:.4f}')
+                if i % 50 == 0 or i == (iter_per_epoch - 1):
+                    print(f'Ep: {epoch+1}/{self.args.epochs}, It: {i+1}/{iter_per_epoch}, loss: {loss:.4f}')
 
-                test_acc = self.test(train=((epoch+1)%25==0)) # Test training set every 25 epochs
-                best_acc = max(test_acc, best_acc)
-                print(f"Best test acc: {best_acc:.2%}\n")
+            test_acc = self.test(train=((epoch+1)%25==0)) # Test training set every 25 epochs
+            best_acc = max(test_acc, best_acc)
+            print(f"Best test acc: {best_acc:.2%}\n")
 
-                torch.save(self.model.state_dict(), os.path.join(self.args.model_path, "ViT_model.pt"))
-                
-                if epoch < self.args.warmup_epochs:
-                    if linear_warmup is not None:
-                        linear_warmup.step()
-                else:
-                    if cos_decay is not None:
-                        cos_decay.step()
+            torch.save(self.model.state_dict(), os.path.join(self.args.model_path, "ViT_model.pt"))
+            
+            if epoch < self.args.warmup_epochs:
+                if linear_warmup is not None:
+                    linear_warmup.step()
+            else:
+                if cos_decay is not None:
+                    cos_decay.step()
 
         self.model = self.model.to(dtype=torch.float32)

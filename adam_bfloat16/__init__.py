@@ -12,7 +12,7 @@ should be suitable for different backends.
 """
 
 import torch
-from torch.optim.optimizer import Optimizer
+from torch.optim.optimizer import Optimizer, _use_grad_for_differentiable
 
 from .stochastic import (
     add_stochastic_,
@@ -30,6 +30,7 @@ class AdamWBF16(Optimizer):
         betas=(0.9, 0.999),
         eps=1e-8,
         weight_decay=0,
+        differentiable: bool=False,
     ):
         """
         Implements AdamW optimization specifically for bfloat16 models.
@@ -48,11 +49,20 @@ class AdamWBF16(Optimizer):
             raise ValueError(f"Invalid beta parameter at index 1: {betas[1]}")
         if not 0.0 <= weight_decay:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
-        defaults = dict(betas=betas, eps=eps, weight_decay=weight_decay, lr=lr)
+        defaults = dict(betas=betas, eps=eps, weight_decay=weight_decay, lr=lr,
+            differentiable=differentiable)
+        
         super().__init__(params, defaults)
 
-    @torch.no_grad()
-    def step(self, zero_grad: bool = False):
+    @_use_grad_for_differentiable
+    def step(self, closure=None):
+        loss = None
+        if closure is not None:
+            with torch.enable_grad():
+                loss = closure()
+
+        self._cuda_graph_capture_health_check()
+
         """Performs a single optimization step."""
         for group in self.param_groups:
             beta1, beta2 = group["betas"]
@@ -97,11 +107,10 @@ class AdamWBF16(Optimizer):
                         lr=lr,
                         eps=group["eps"],
                         decay_this_iteration=decay_this_iteration,
-                        zero_grad=zero_grad,
+                        zero_grad=self.zero_grad,
                     )
 
 
-@torch.compile()
 def _make_step(
     grad,
     p,

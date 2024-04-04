@@ -22,7 +22,7 @@ def print_args(args):
 def update_args(args):
     args.model_path = os.path.join(args.model_path, args.dataset)
     args.n_patches = (args.image_size // args.patch_size) ** 2
-    args.is_cuda = torch.cuda.is_available()
+    args.is_cuda = True # torch.cuda.is_available()
     return args
 
 if __name__ == '__main__':
