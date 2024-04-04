@@ -83,6 +83,7 @@ def add_stochastic_(_input: Tensor, other: Tensor, alpha: float = 1.0):
         other: the other tensor
         alpha: a multiplier for other
     """
+    _input_original = _input
     if _input.device.type == 'mps':
         _input = _input.to(dtype=torch.float32)
 
@@ -98,7 +99,11 @@ def add_stochastic_(_input: Tensor, other: Tensor, alpha: float = 1.0):
     if _input.size(-1) % 2 != 0 and _input.device.type == 'mps':
         _input = swap_back_first_and_last_dims(_input)
         result = swap_back_first_and_last_dims(result)
+
     copy_stochastic_(_input, result)
+
+    if _input.size(-1) % 2 != 0 and _input.device.type == 'mps':
+        _input_original.copy_(_input.view(dtype=torch.float32))
 
 
 def addcdiv_stochastic_(_input: Tensor, tensor1: Tensor, tensor2: Tensor, value: float = 1.0):
