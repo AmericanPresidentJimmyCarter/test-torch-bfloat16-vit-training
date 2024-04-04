@@ -109,7 +109,7 @@ class AdamWBF16(Optimizer):
                         decay_this_iteration=decay_this_iteration,
                         zero_grad=self.zero_grad,
                     )
-
+        return loss
 
 def _make_step(
     grad,
